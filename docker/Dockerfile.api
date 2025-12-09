@@ -8,6 +8,8 @@ RUN apt-get update && apt-get install -y \
     python3-opencv \
     curl \
     git \
+    libgl1 \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python package manager
@@ -19,18 +21,15 @@ COPY requirements.txt .
 # Install dependencies (YOLO, torch, FastAPI, FAISS, CLIP, etc.)
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy FastAPI backend
+
 COPY src/api ./src/api
-
-# Copy YOLO pipeline (your detect_crop_embed lives here)
-COPY src/models/pipeline ./src/models/pipeline
-
-# Copy vector store code (faiss_wardrobe, clip_extractor)
+COPY src/models ./src/models
 COPY src/vector_store ./src/vector_store
 
-# Copy ML model files
-COPY models/trained/best.pt /app/models/best.pt
+COPY models/trained/best.pt /app/models/trained/best.pt
 
+# Ensure model folder exists
+RUN mkdir -p /app/models/trained
 
 # Expose FastAPI port
 EXPOSE 8000
@@ -38,6 +37,9 @@ EXPOSE 8000
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8000/health || exit 1
+
+# Set Python path
+ENV PYTHONPATH=/app
 
 # Start the FastAPI server
 CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

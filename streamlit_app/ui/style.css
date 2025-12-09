@@ -1,0 +1,128 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+html, body, #root {
+    height: 100%;
+  }
+  
+  .stApp {
+    height: 100%;
+    background: linear-gradient(135deg, var(--bg-1) 0%, var(--bg-2) 60%, #f7f9fb 100%) !important;
+    font-family:'Inter',sans-serif;
+    color:var(--ink);
+  }
+
+:root{
+  /* Menswear palette */
+  --bg-1:#f5f6f7;          /* near-white */
+  --bg-2:#e9eef2;          /* light steel */
+  --ink:#101418;           /* charcoal */
+  --muted:#6b7280;         /* slate */
+  --card:#ffffff;          /* white */
+  --line:#e5e7eb;          /* light border */
+  --accent:#0f2a4a;        /* deep navy */
+  --accent-2:#1f3f6e;      /* steel navy */
+  --accent-3:#2b4f88;      /* indigo navy */
+  --highlight:#c08400;     /* amber/gold */
+  --highlight-2:#975a16;   /* warm tan */
+  --shadow:0 16px 40px rgba(16,20,24,0.10);
+  --shadow-hover:0 20px 50px rgba(16,20,24,0.14);
+  --radius-xl:20px;
+  --radius-lg:12px;
+}
+
+/* Global */
+.stApp{
+  background: linear-gradient(135deg, var(--bg-1) 0%, var(--bg-2) 60%, #f7f9fb 100%);
+  font-family:'Inter',sans-serif;
+  color:var(--ink);
+}
+.main .block-container{padding-top:0rem;padding-bottom:2rem;max-width:1200px;}
+
+/* Hide Streamlit chrome & noisy UI */
+#MainMenu, footer, header, [data-testid="stToolbar"], .stDeployButton,
+[data-testid="stDecoration"], .stActionButton, .stAlert, .stWarning,
+[data-testid="stNotification"], .stToast, [data-testid="stStatusWidget"]{display:none !important;}
+
+/* Title */
+.logo-container{text-align:center;margin:2rem 0;}
+.app-title{
+  color:var(--ink);font-size:2.6rem;font-weight:700;margin:1rem 0 .5rem 0;letter-spacing:-.02em;
+}
+.app-subtitle{
+  color:var(--muted);font-size:1.05rem;font-weight:500;margin-bottom:0;
+}
+
+/* Tabs */
+.stTabs [data-baseweb="tab-list"]{
+  gap:8px;background:rgba(15,42,74,0.06);
+  border-radius:16px;padding:8px;backdrop-filter:blur(10px);
+  border:1px solid rgba(31,63,110,0.12);
+}
+.stTabs [data-baseweb="tab"]{
+  color:var(--ink);background:transparent;border-radius:12px;font-weight:600;
+  padding:12px 24px;transition:.25s ease;
+}
+.stTabs [aria-selected="true"]{
+  background:linear-gradient(135deg, rgba(31,63,110,.20), rgba(43,79,136,.18)) !important;
+  color:var(--ink) !important;box-shadow:0 4px 12px rgba(31,63,110,.18);
+  border:1px solid rgba(31,63,110,.22);
+}
+
+/* Cards */
+.profile-card{
+  background:var(--card);border-radius:var(--radius-xl);padding:0;margin:2rem auto;
+  max-width:520px;box-shadow:var(--shadow);overflow:hidden;
+  transition:transform .25s ease, box-shadow .25s ease;
+  border:1px solid var(--line);
+}
+.profile-card:hover{transform:translateY(-4px);box-shadow:var(--shadow-hover);}
+.card-image{width:100%;height:400px;object-fit:cover;background:linear-gradient(45deg,#f3f4f6,#e5e7eb);
+  display:flex;align-items:center;justify-content:center;font-size:4rem;color:#b8c0cc;}
+.card-content{padding:24px;}
+
+.outfit-name{
+  font-size:2.1rem;font-weight:800;color:var(--ink);margin-bottom:.5rem;letter-spacing:-.01em;text-align:center;
+}
+.outfit-style{
+  font-size:1.05rem;color:var(--muted);margin-bottom:1.25rem;font-weight:600;text-align:center;
+}
+
+.item-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:20px 0;}
+.stat-item{
+  background:#f8fafc;padding:12px;border-radius:var(--radius-lg);text-align:center;
+  border:1px solid var(--line);transition:background .2s ease;
+}
+.stat-label{font-weight:700;color:#4b5563;font-size:.78rem;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;}
+.stat-value{color:var(--highlight);font-size:1.1rem;font-weight:800;}
+
+.item-description{
+  font-style:italic;color:#4b5563;line-height:1.6;margin:20px 0;font-size:1rem;
+  background:#f8fafc;padding:16px;border-radius:var(--radius-lg);border-left:4px solid var(--accent-3);
+}
+
+/* Quality Score */
+.compatibility-score{
+  font-size:2.6rem;font-weight:900;
+  background:linear-gradient(135deg, var(--highlight), var(--highlight-2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  text-align:center;margin:12px 0;letter-spacing:-.02em;
+}
+
+/* Buttons */
+.stButton > button{
+  background:linear-gradient(135deg, var(--accent), var(--accent-3)) !important;
+  color:white !important;border:none !important;border-radius:12px !important;
+  font-weight:700 !important;font-family:'Inter',sans-serif !important;
+  padding:12px 24px !important;transition:.25s ease !important;
+  box-shadow:0 4px 12px rgba(15,42,74,.25) !important;border:1px solid rgba(255,255,255,.06);
+}
+.stButton > button:hover{transform:translateY(-2px) !important;box-shadow:0 8px 20px rgba(15,42,74,.35) !important;}
+
+/* Metrics */
+.metric-card{
+  background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;text-align:center;
+  box-shadow:0 6px 18px rgba(16,20,24,0.06);
+}
+
+/* Subtle info banners */
+.content-card h2{color:var(--ink);font-weight:800;}
+.content-card p{color:var(--muted);}

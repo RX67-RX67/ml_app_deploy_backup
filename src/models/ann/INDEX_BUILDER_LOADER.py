@@ -1,50 +1,22 @@
-"""
-Index Builder & Loader Module
------------------------------
-
-This module is responsible for:
-1. Building FAISS indexes for each category (tops/bottoms/shoes)
-2. Persisting FAISS indexes to disk (Docker volume)
-3. Loading existing indexes from disk
-4. Rebuilding indexes when vector deletions accumulate
-5. Validating dimension compatibility
-
-This module does NOT insert vectors (EmbeddingManager does that).
-"""
-
 import os
 import faiss
 import json
 import numpy as np
-from typing import Dict, List
 
 
 class IndexBuilderLoader:
     """
-    Builds, loads, saves, and rebuilds FAISS indexes for each category.
-    Also loads/saves id_maps so that index and metadata remain aligned.
+    Builds/Loads FAISS indexes for tops / bottoms / shoes
+    using metadata.json (embedding_path -> .npy file)
     """
 
-    def __init__(self, index_paths: Dict[str, str], dim: int, index_factory_string: str = "Flat"):
-        """
-        Args:
-            index_paths: dict mapping category -> index path
-                {
-                    "tops": "/data/faiss/tops.index",
-                    "bottoms": "/data/faiss/bottoms.index",
-                    "shoes": "/data/faiss/shoes.index"
-                }
-
-            dim: embedding dimension (CLIP output dimension)
-            index_factory_string: FAISS index type (e.g., "Flat", "IVF64,HNSW32")
-        """
-
+    def __init__(self, index_paths: dict, dim: int, index_factory_string="Flat"):
         self.index_paths = index_paths
         self.dim = dim
         self.factory = index_factory_string
 
         self.indexes = {}
-        self.id_maps = {}  
+        self.id_maps = {}
 
         self._load_or_create_indexes()
         self._load_or_create_id_maps()
@@ -54,164 +26,114 @@ class IndexBuilderLoader:
     # -------------------------------------------------------------
     def _build_new_index(self):
         print(f"[IndexBuilder] Building new FAISS index: {self.factory}, dim={self.dim}")
-        index = faiss.index_factory(self.dim, self.factory)
-        return index
+        return faiss.index_factory(self.dim, self.factory)
 
     # -------------------------------------------------------------
-    # Load saved id_maps or create empty structure
+    # Load id_maps.json
     # -------------------------------------------------------------
     def _load_or_create_id_maps(self):
-        idmap_path = "faiss/id_maps.json"
+        idmap_path = "src/models/ann/faiss/id_maps.json"
 
         if os.path.exists(idmap_path):
-            print("[IndexLoader] Loading id_maps from disk")
+            print("[IndexLoader] Loading id_maps.json")
             with open(idmap_path, "r") as f:
                 self.id_maps = json.load(f)
 
-            # Convert keys back to int (JSON stores keys as strings)
+            # convert keys to int
             for cat in self.id_maps:
                 self.id_maps[cat] = {int(k): v for k, v in self.id_maps[cat].items()}
 
         else:
-            print("[IndexLoader] No id_maps found → creating empty map")
-            self.id_maps = {cat: {} for cat in self.index_paths}
-    
+            print("[IndexLoader] No id_maps found → creating empty structure")
+            self.id_maps = {c: {} for c in self.index_paths}
+
     # -------------------------------------------------------------
     # Load existing FAISS indexes or create new ones
     # -------------------------------------------------------------
     def _load_or_create_indexes(self):
-        for category, path in self.index_paths.items():
-
+        for cat, path in self.index_paths.items():
             if os.path.exists(path):
-                print(f"[IndexLoader] Loading FAISS index for {category} from {path}")
+                print(f"[IndexLoader] Loading FAISS index → {path}")
                 idx = faiss.read_index(path)
 
-                # Dimension check
                 if idx.d != self.dim:
-                    raise ValueError(
-                        f"[IndexLoader] Dimension mismatch for {category}: "
-                        f"index_dim={idx.d}, expected={self.dim}"
-                    )
+                    raise ValueError(f"Dim mismatch in {cat}: Index={idx.d}, Expected={self.dim}")
 
-                self.indexes[category] = idx
-
+                self.indexes[cat] = idx
             else:
-                print(f"[IndexLoader] No index found for {category} → creating new index")
-                new_idx = self._build_new_index()
-                self.indexes[category] = new_idx
+                print(f"[IndexLoader] No index found for {cat} → creating new index")
+                self.indexes[cat] = self._build_new_index()
 
     # -------------------------------------------------------------
-    # Save indexes and id_maps
+    # Save FAISS indexes and id_maps
     # -------------------------------------------------------------
     def save_all(self):
-        base_dir = os.path.dirname(list(self.index_paths.values())[0])
-        os.makedirs(base_dir, exist_ok=True)
+        for cat, idx in self.indexes.items():
+            path = self.index_paths[cat]
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            faiss.write_index(idx, path)
+            print(f"[IndexSaver] Saved {cat}.index → {path}")
 
-        for category, index in self.indexes.items():
-            path = self.index_paths[category]
-            faiss.write_index(index, path)
-            print(f"[IndexLoader] Saved {category} index → {path}")
-
-        # save id_maps
-        idmap_path = "faiss/id_maps.json"
+        idmap_path = "src/models/ann/faiss/id_maps.json"
         with open(idmap_path, "w") as f:
             json.dump(self.id_maps, f, indent=2)
-        print(f"[IndexLoader] Saved id_maps → {idmap_path}")
+        print(f"[IndexSaver] Saved id_maps.json")
 
     # -------------------------------------------------------------
-    # Ingest items (ONLY when building index)
+    # ⭐ Correct ingestion logic for new metadata.json
     # -------------------------------------------------------------
-    def ingest_items(self, items_json):
+    def ingest_items_from_metadata(self, metadata_dict: dict):
         """
-        items_json: list of dicts
-        [
-            {"item_id": "abc123", "category": "tops", "embedding": [...]},
-            ...
-        ]
+        metadata_dict = { item_id → { metadata } }
         """
+
+        print("\n[IngestItems] START ingesting embeddings from metadata.json")
 
         category_map = {
             "top": "tops",
             "tops": "tops",
             "bottom": "bottoms",
             "bottoms": "bottoms",
-            "shoe": "shoes",
             "shoes": "shoes",
+            "shoe": "shoes",
         }
 
-        # regenerate id_maps
-        self.id_maps = {cat: {} for cat in self.index_paths}
+        # reset id_maps
+        self.id_maps = {c: {} for c in self.index_paths}
 
-        for item in items_json:
-            raw_cat = item["category"].lower().strip()
-            cat = category_map.get(raw_cat)
-
-            if cat not in self.indexes:
-                print(f"[IngestItems] WARNING: skipping item_id={item['item_id']} "
-                      f"because category '{raw_cat}' is not defined.")
-                continue
-
-            emb = np.array(item["embedding"], dtype="float32").reshape(1, -1)
-            faiss.normalize_L2(emb)
-
-            index = self.indexes[cat]
-            vid = index.ntotal
-            index.add(emb)
-
-            self.id_maps[cat][vid] = item["item_id"]
-
-        print("[IngestItems] Successfully ingested items.")
-    
-    # -------------------------------------------------------------
-    # New ingestion method for new metadata.json structure
-    # -------------------------------------------------------------
-    def ingest_items_from_metadata(self, metadata_dict):
-        """
-        metadata_dict: dict[item_id] -> metadata entry
-        """
-        print("[IngestItems] Ingesting embeddings from metadata.json (.npy files)")
-
-        category_map = {
-            "top": "tops", "tops": "tops",
-            "bottom": "bottoms", "bottoms": "bottoms",
-            "shoe": "shoes", "shoes": "shoes",
-        }
-
-        # Reset id_maps
-        self.id_maps = {cat: {} for cat in self.index_paths}
-
+        # iterate metadata entries
         for item_id, meta in metadata_dict.items():
 
             raw_cat = meta["category"].lower().strip()
             cat = category_map.get(raw_cat)
 
             if cat not in self.indexes:
-                print(f"[IngestItems] WARNING: skipping {item_id}, category '{raw_cat}' not recognized.")
+                print(f"[IngestItems] SKIP {item_id}: Category '{raw_cat}' invalid.")
                 continue
 
-            # Fix embedding path relative to pipeline location
             emb_path = meta["embedding_path"]
-            emb_path = os.path.join("../../../", emb_path)
+
+            # ---- FIXED: correct embedding path inside docker ---- #
+            emb_path = os.path.join("/app", emb_path)
 
             if not os.path.exists(emb_path):
-                print(f"[IngestItems] WARNING: embedding file missing → {emb_path}")
+                print(f"[IngestItems] WARNING: Embedding file missing → {emb_path}")
                 continue
 
-            # Load embedding
+            # load embedding
             try:
                 emb = np.load(emb_path).astype("float32").reshape(1, -1)
             except Exception as e:
-                print(f"[IngestItems] ERROR loading embedding for {item_id}: {e}")
+                print(f"[IngestItems] ERROR loading embedding {emb_path}: {e}")
                 continue
 
-            # Normalize
+            # normalize
             faiss.normalize_L2(emb)
 
-            # Add to FAISS index
             idx = self.indexes[cat]
             vid = idx.ntotal
             idx.add(emb)
 
             self.id_maps[cat][vid] = item_id
 
-        print("[IngestItems] Successfully ingested all vectors from metadata.json")
+        print("[IngestItems] DONE ingesting all embeddings.\n")
