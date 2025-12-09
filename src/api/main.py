@@ -8,54 +8,34 @@ import numpy as np
 
 from pydantic import BaseModel
 
-# --- Internal modules ---
+# ---- internal modules ----
 from .inference import process_uploaded_image
 from .schemas import YoloEmbedResponse
 
-# ⭐ FIXED imports — must match your actual file names
 from src.models.ann.ann_search_service import ANNSearchService
-from src.models.ann.outfit_generator import generate_outfits
 from src.models.ann.index_builder_loader import IndexBuilderLoader
+from src.models.ann.outfit_generator import generate_outfits
+from src.models.ann.post_search_reranking import OutfitReranker
+from src.models.ann.text_embedding import CLIPTextEmbeddingExtractor
 
 
-ann_engine = None
-# ================================
-# FastAPI App
-# ================================
-app = FastAPI(
-    title="SnapStyle Backend",
-    version="3.0.0",
-)
 
 # ================================
-# Enable CORS
+# App
 # ================================
+app = FastAPI(title="SnapStyle Backend", version="4.0.0")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=True
 )
 
 
 # ================================
-# Health Check
-# ================================
-@app.get("/health")
-async def health():
-    """
-    Frontend calls this to check backend status.
-    """
-    global ann_engine
-    return {
-        "status": "ok",
-        "ann_ready": ann_engine is not None
-    }
-
-
-# ================================
-# File paths
+# Paths
 # ================================
 META_PATH = "data/user_embeddings/metadata.json"
 CROP_DIR = "data/user_crops"
@@ -65,30 +45,32 @@ os.makedirs(CROP_DIR, exist_ok=True)
 
 
 # ================================
-# AUTO REBUILD FAISS INDEX
+# Health Check
+# ================================
+@app.get("/health")
+async def health():
+    global ann_engine
+    return {"status": "ok", "ann_ready": ann_engine is not None}
+
+
+# ================================
+# Auto FAISS Rebuild
 # ================================
 def rebuild_faiss_indexes():
     print("\n🔄 [FAISS] Rebuilding FAISS Indexes...")
 
-    # ---- metadata.json exists? ----
     if not os.path.exists(META_PATH):
-        print("❌ metadata.json not found")
+        print("❌ metadata.json does not exist")
         return None, None
 
-    # ---- load metadata ----
-    try:
-        with open(META_PATH, "r") as f:
-            metadata_list = json.load(f)
-    except Exception as e:
-        print(f"❌ Cannot read metadata.json: {e}")
-        return None, None
+    with open(META_PATH, "r") as f:
+        metadata_list = json.load(f)
 
-    # ---- empty metadata ----
     if len(metadata_list) == 0:
-        print("❌ metadata.json is EMPTY → no embeddings to index")
+        print("❌ metadata.json is empty")
         return None, None
 
-    metadata_dict = {item["item_id"]: item for item in metadata_list}
+    metadata_dict = {m["item_id"]: m for m in metadata_list}
 
     index_paths = {
         "tops": f"{INDEX_DIR}/tops.index",
@@ -100,64 +82,51 @@ def rebuild_faiss_indexes():
     loader.ingest_items_from_metadata(metadata_dict)
     loader.save_all()
 
-    print("✅ [FAISS] Rebuild completed.\n")
+    print("✅ [FAISS] Rebuild complete.\n")
     return loader.indexes, loader.id_maps
 
 
-
 # ================================
-# Startup Event → Auto rebuild
+# Startup → rebuild FAISS
 # ================================
 @app.on_event("startup")
-def startup_event():
+def startup():
     global ann_engine
     indexes, id_maps = rebuild_faiss_indexes()
 
     if indexes is None:
         ann_engine = None
-        print("⚠ ANN engine DISABLED — FAISS not ready.")
-        return
-
-    ann_engine = ANNSearchService(indexes=indexes, id_maps=id_maps)
-    print("🚀 ANN Engine Ready on Startup!")
+        print("⚠ ANN disabled")
+    else:
+        ann_engine = ANNSearchService(indexes=indexes, id_maps=id_maps)
+        print("🚀 ANN Engine Ready")
 
 
 # ================================
-# YOLO + CLIP Embedding API
+# YOLO + CLIP Embedding
 # ================================
 @app.post("/yolo/embed", response_model=YoloEmbedResponse)
 async def yolo_embed_endpoint(file: UploadFile = File(...)):
-    """
-    Upload image → YOLO detect → CLIP embed → metadata.json update → auto FAISS rebuild.
-    """
     global ann_engine
 
-    try:
-        result = process_uploaded_image(file)
+    result = process_uploaded_image(file)  # updates metadata.json inside
 
-        # Convert crop_path to URL
-        for item in result["items"]:
-            filename = os.path.basename(item["crop_path"])
-            item["crop_path"] = f"http://localhost:8000/yolo/crop/{filename}"
+    # fix crop URLs
+    for item in result["items"]:
+        name = os.path.basename(item["crop_path"])
+        item["crop_path"] = f"http://localhost:8000/yolo/crop/{name}"
 
-        # --------------------------------------
-        # ⭐ Auto-rebuild FAISS after new upload
-        # --------------------------------------
-        indexes, id_maps = rebuild_faiss_indexes()
+    # rebuild FAISS after new upload
+    indexes, id_maps = rebuild_faiss_indexes()
+    if indexes is not None:
+        ann_engine = ANNSearchService(indexes=indexes, id_maps=id_maps)
+        print("✨ ANN refreshed after upload")
 
-        if indexes is not None:
-            ann_engine = ANNSearchService(indexes=indexes, id_maps=id_maps)
-            print("✨ ANN Engine Refreshed After Upload!")
-
-        return result
-
-    except Exception as e:
-        raise HTTPException(500, str(e))
+    return result
 
 
-# Serve cropped user clothing images
 @app.get("/yolo/crop/{filename}")
-async def get_crop_image(filename: str):
+async def get_crop(filename: str):
     path = os.path.join(CROP_DIR, filename)
     if not os.path.exists(path):
         raise HTTPException(404, f"{filename} not found")
@@ -165,32 +134,11 @@ async def get_crop_image(filename: str):
 
 
 # ================================
-# ANN Search
-# ================================
-@app.post("/ann/search")
-async def ann_search(embedding: list):
-    global ann_engine
-
-    if ann_engine is None:
-        raise HTTPException(500, "FAISS index not ready")
-
-    try:
-        emb = np.array(embedding, dtype="float32")
-        return ann_engine.search_multiple_categories(
-            anchor_embedding=emb,
-            categories=["tops", "bottoms", "shoes"],
-            k_per_category=10
-        )
-
-    except Exception as e:
-        raise HTTPException(500, str(e))
-
-
-# ================================
-# Outfit Generator API
+# Outfit Generator
 # ================================
 class OutfitRequest(BaseModel):
     anchor_id: str
+    prompt: str | None = None  # 用户输入 prompt
 
 
 @app.post("/outfit/generate")
@@ -200,48 +148,82 @@ async def outfit_generate(req: OutfitRequest):
     if ann_engine is None:
         raise HTTPException(500, "FAISS index not ready")
 
-    try:
-        # Load metadata.json
-        with open(META_PATH, "r") as f:
-            metadata_list = json.load(f)
-        metadata_dict = {item["item_id"]: item for item in metadata_list}
+    # load metadata
+    with open(META_PATH, "r") as f:
+        meta_list = json.load(f)
+    metadata = {m["item_id"]: m for m in meta_list}
 
-        if req.anchor_id not in metadata_dict:
-            raise HTTPException(404, f"anchor '{req.anchor_id}' not found")
+    if req.anchor_id not in metadata:
+        raise HTTPException(404, f"anchor_id `{req.anchor_id}` not found")
+  
+    anchor_cat = metadata[req.anchor_id]["category"].lower()
 
-        # Load anchor embedding
-        emb_path = metadata_dict[req.anchor_id]["embedding_path"]
-        anchor_emb = np.load(emb_path).astype("float32")
-
-        # ANN search
-        ann_results = ann_engine.search_multiple_categories(
-            anchor_embedding=anchor_emb,
-            categories=["tops", "bottoms", "shoes"],
-            k_per_category=10
+    if anchor_cat not in ["top", "bottom", "shoes"]:
+        
+        fallback = next(
+            (item_id for item_id, m in metadata.items()
+             if m["category"].lower() in ["top", "bottom", "shoes"]),
+            None
         )
 
-        # Outfit generation
-        outfits = generate_outfits(req.anchor_id, metadata_dict, ann_results)
+        if fallback is None:
+            raise HTTPException(400, "You must upload at least one top/bottom/shoes before generating outfits.")
 
-        # Add images for frontend display
-        enhanced = []
-        for outfit in outfits:
-            new_outfit = {
-                "outfit_id": outfit["outfit_id"],
-                "items": {}
+        print(f"⚠️ Invalid anchor `{req.anchor_id}` (category `{anchor_cat}`) → switching to `{fallback}`")
+
+      
+        req.anchor_id = fallback
+
+
+
+    # load anchor embedding
+    emb = np.load(metadata[req.anchor_id]["embedding_path"]).astype("float32")
+
+    # ANN search
+    ann_results = ann_engine.search_multiple_categories(
+        anchor_embedding=emb,
+        categories=["tops", "bottoms", "shoes"],
+        k_per_category=10
+    )
+
+    # generate raw outfits
+    outfits = generate_outfits(req.anchor_id, metadata, ann_results)
+
+    # ================================
+    # ⭐ Prompt Embedding (optional)
+    # ================================
+    prompt_emb = None
+    if req.prompt:
+        print(f"🔮 Generating prompt embedding: {req.prompt}")
+        text_model = CLIPTextEmbeddingExtractor("./local_clip")
+        prompt_emb = text_model.encode(req.prompt)
+
+    # ================================
+    # ⭐ Rerank outfits
+    # ================================
+    reranker = OutfitReranker(metadata)
+    ranked = reranker.rerank(outfits, prompt_emb=prompt_emb)
+
+    # take top 3
+    best = ranked[:3]
+
+    # ================================
+    # return in frontend friendly format
+    # ================================
+    result = []
+    for score, outfit in best:
+        formatted = {
+            "outfit_id": outfit["outfit_id"],
+            "score": score,
+            "items": {}
+        }
+        for cat, item_id in outfit["items"].items():
+            m = metadata[item_id]
+            formatted["items"][cat] = {
+                "item_id": item_id,
+                "category": m["category"],
+                "crop_path": f"http://localhost:8000/yolo/crop/{os.path.basename(m['crop_path'])}"
             }
+        result.append(formatted)
 
-            for cat, item_id in outfit["items"].items():
-                meta = metadata_dict[item_id]
-                new_outfit["items"][cat] = {
-                    "item_id": item_id,
-                    "category": meta["category"],
-                    "crop_path": f"http://localhost:8000/yolo/crop/{os.path.basename(meta['crop_path'])}"
-                }
-
-            enhanced.append(new_outfit)
-
-        return {"anchor_id": req.anchor_id, "outfits": enhanced}
-
-    except Exception as e:
-        raise HTTPException(500, str(e))
+    return {"anchor_id": req.anchor_id, "top_outfits": result}

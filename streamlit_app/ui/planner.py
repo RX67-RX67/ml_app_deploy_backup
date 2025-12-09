@@ -4,38 +4,28 @@ import requests
 BACKEND_URL = "http://snapstyle-backend:8000"
 
 
-# -----------------------------------
-# UI: Display one outfit card
-# -----------------------------------
 def display_outfit_card(outfit):
-    st.subheader(f"✨ Outfit ID: {outfit['outfit_id']}  — Score: {outfit.get('score', 0):.3f}")
+    st.subheader(f"✨ Outfit {outfit['outfit_id']} — Score: {outfit['score']:.3f}")
 
     cols = st.columns(3)
+    order = ["tops", "bottoms", "shoes"]
 
-    ordered = ["tops", "bottoms", "shoes"]
-
-    for i, cat in enumerate(ordered):
+    for i, cat in enumerate(order):
         if cat in outfit["items"]:
-            info = outfit["items"][cat]
-
+            item = outfit["items"][cat]
             with cols[i]:
-                st.markdown(f"### {cat.capitalize()}")
-                st.image(info["crop_path"], width=180)
-                st.markdown(f"**Item ID:** `{info['item_id']}`")
-    st.markdown("---")
+                st.image(item["crop_path"], width=180)
+                st.caption(f"{cat} — {item['item_id']}")
 
 
-# -----------------------------------
-# Main Planner UI
-# -----------------------------------
 def render_planner_ui():
-    st.markdown("## 👗 AI Outfit Planner")
+    st.markdown("## Outfit Planner — Ranked Results")
 
-    prompt = st.text_input("Describe your look (optional, not used yet):")
+    prompt = st.text_input("Describe your style (optional):")
 
     if st.button("Generate Outfits"):
         if "wardrobe_items" not in st.session_state or len(st.session_state.wardrobe_items) == 0:
-            st.error("Please upload at least one clothing item first.")
+            st.error("Upload items first!")
             return
 
         anchor = st.session_state.wardrobe_items[0]
@@ -43,27 +33,20 @@ def render_planner_ui():
 
         resp = requests.post(
             f"{BACKEND_URL}/outfit/generate",
-            json={"anchor_id": anchor_id}
+            json={"anchor_id": anchor_id, "prompt": prompt}
         )
 
         if resp.status_code != 200:
             st.error(resp.text)
             return
 
-        outfits = resp.json()["outfits"]
+        # ⭐ FIX: backend returns top_outfits, not outfits
+        st.session_state.recommended_outfits = resp.json()["top_outfits"]
 
-        # -----------------------------------------
-        # ⭐ Sort by score (descending)
-        # -----------------------------------------
-        outfits_sorted = sorted(outfits, key=lambda x: x.get("score", 0), reverse=True)
-
-        # -----------------------------------------
-        # ⭐ Take top 3 outfits
-        # -----------------------------------------
-        st.session_state.recommended_outfits = outfits_sorted[:3]
-
-    # ---------------- DISPLAY ---------------- #
+    # ---------- DISPLAY ----------
     if st.session_state.get("recommended_outfits"):
         st.markdown("## 🔥 Top 3 Best-Matched Outfits")
+
         for outfit in st.session_state.recommended_outfits:
             display_outfit_card(outfit)
+            st.markdown("---")

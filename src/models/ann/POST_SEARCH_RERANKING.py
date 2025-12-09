@@ -15,17 +15,21 @@ class OutfitReranker:
 
     def get_emb(self, item_id):
         emb_path = self.meta[item_id]["embedding_path"]
-        full_path = os.path.join("../../../", emb_path)
+
+        # ⭐ Docker 环境内正确的路径
+        full_path = os.path.join("/app", emb_path)
+
+        if not os.path.exists(full_path):
+            raise FileNotFoundError(f"Embedding not found: {full_path}")
 
         emb = np.load(full_path).astype("float32")
 
-        emb = emb / (np.linalg.norm(emb) + 1e-8) 
-
+        # normalize
+        emb = emb / (np.linalg.norm(emb) + 1e-8)
         return emb
 
-
     def score_outfit(self, outfit, prompt_emb=None):
-        
+
         top_id    = outfit["items"]["tops"]
         bottom_id = outfit["items"]["bottoms"]
         shoes_id  = outfit["items"]["shoes"]
@@ -34,14 +38,14 @@ class OutfitReranker:
         bottom_emb = self.get_emb(bottom_id)
         shoes_emb  = self.get_emb(shoes_id)
 
-        # internal outfit coherence
+        # internal coherence
         s1 = self.cosine(top_emb, bottom_emb)
         s2 = self.cosine(top_emb, shoes_emb)
         s3 = self.cosine(bottom_emb, shoes_emb)
 
         score = self.w1*s1 + self.w2*s2 + self.w3*s3
 
-        # alignment with user prompt
+        # optional — prompt alignment
         if prompt_emb is not None:
             sp = (
                 self.cosine(top_emb, prompt_emb) +
