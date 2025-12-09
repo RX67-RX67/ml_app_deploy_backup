@@ -8,20 +8,18 @@ from ultralytics import YOLO
 
 class YoloV8Detector:
     """
-    YOLOv8 detector supporting fine-grained clothing classification:
-    - shoes
-    - bag
-    - accessory
-    - clothing → (top / bottom)
-    - unknown
+    YOLOv8 detector with L A Z Y  loading.
+    Model loads ONLY when first used, avoiding Streamlit double-execution freeze.
     """
 
-    def __init__(self,
-                 model_path: str = "models/trained/best.pt",
-                 device: str = "cpu",
-                 conf: float = 0.25,
-                 iou: float = 0.45,
-                 imgsz: int = 640):
+    def __init__(
+        self,
+        model_path: str = "models/trained/best.pt",
+        device: str = "cpu",
+        conf: float = 0.25,
+        iou: float = 0.45,
+        imgsz: int = 640,
+    ):
 
         self.model_path = model_path
         self.device = device
@@ -29,34 +27,49 @@ class YoloV8Detector:
         self.iou = iou
         self.imgsz = imgsz
 
+        # DO NOT LOAD MODEL HERE ❌ (Lazy loading)
+        self.yolo = None
+        self.class_names = {}
+
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"YOLO model not found at: {model_path}")
 
-        print(f"Loading YOLO model: {model_path}...")
+        print("[YoloV8Detector] Initialized (model not yet loaded).")
 
-        try:
-            self.yolo = YOLO(model_path)
-            print(f"✓ YOLOv8 loaded on {device}")
-        except Exception as e:
-            print(f"✗ Failed to load YOLO model: {e}")
-            raise
+    # ----------------------------------------------------
+    # L A Z Y   L O A D I N G  
+    # ----------------------------------------------------
+    def _load_model(self):
+        """Load YOLO model only when first used."""
+        if self.yolo is None:
+            print(f"[YoloV8Detector] Loading YOLO model: {self.model_path} ...")
 
-        # send model to device
-        try:
-            self.yolo.to(device)
-        except AttributeError:
-            self.yolo.model.to(device)
+            try:
+                self.yolo = YOLO(self.model_path)
+                print(f"[YoloV8Detector] ✓ YOLOv8 loaded on device={self.device}")
+            except Exception as e:
+                print(f"[YoloV8Detector] ✗ Failed to load YOLO model: {e}")
+                raise
 
-        # class names
-        try:
-            self.class_names = self.yolo.model.names
-        except AttributeError:
-            self.class_names = {}
+            # Move to device
+            try:
+                self.yolo.to(self.device)
+            except AttributeError:  # older ultralytics fallback
+                self.yolo.model.to(self.device)
+
+            # Class names
+            try:
+                self.class_names = self.yolo.model.names
+            except AttributeError:
+                self.class_names = {}
 
     # ----------------------------------------------------
     # YOLO detection only
     # ----------------------------------------------------
     def detect(self, image_path: str) -> List[Dict]:
+
+        # <-- ensure model is loaded
+        self._load_model()  
 
         results = self.yolo.predict(
             image_path,
@@ -91,24 +104,22 @@ class YoloV8Detector:
     # Clothing refinement
     # ----------------------------------------------------
     def refine_clothing_category(self, bbox, img_h):
-        """
-        clothing → top or bottom
-        rule: bbox center in upper 55% → top, else → bottom
-        """
         x1, y1, x2, y2 = bbox
         yc = (y1 + y2) / 2
 
-        if yc < img_h * 0.55:
-            return "top"
-        else:
-            return "bottom"
+        return "top" if yc < img_h * 0.55 else "bottom"
 
     # ----------------------------------------------------
     # Detect + Crop + Assign category
     # ----------------------------------------------------
-    def detect_and_crop(self,
-                        image_path: str,
-                        output_dir: str = "data/user_crops") -> List[Dict]:
+    def detect_and_crop(
+        self,
+        image_path: str,
+        output_dir: str = "data/user_crops",
+    ) -> List[Dict]:
+
+        # <-- ensure model is loaded
+        self._load_model()
 
         os.makedirs(output_dir, exist_ok=True)
 
@@ -124,7 +135,7 @@ class YoloV8Detector:
         for d in dets:
             x1, y1, x2, y2 = d["bbox"]
 
-            # clamp coords
+            # Clamp coordinates
             x1 = max(0, min(x1, w))
             x2 = max(0, min(x2, w))
             y1 = max(0, min(y1, h))
@@ -140,18 +151,18 @@ class YoloV8Detector:
             cls_name = d["cls_name"].lower()
 
             # ------------------------------
-            # 1. YOLO raw class → main category
+            # 1. YOLO → category mapping
             # ------------------------------
-            if "shoe" in cls_name or "boot" in cls_name or "sandal" in cls_name:
+            if any(x in cls_name for x in ["shoe", "boot", "sandal"]):
                 category = "shoes"
 
-            elif "bag" in cls_name or "handbag" in cls_name or "backpack" in cls_name:
+            elif any(x in cls_name for x in ["bag", "handbag", "backpack"]):
                 category = "bag"
 
             elif "accessory" in cls_name or cls_name in ["belt", "hat", "scarf"]:
                 category = "accessory"
 
-            elif "cloth" in cls_name or "clothing" in cls_name or "apparel" in cls_name:
+            elif any(x in cls_name for x in ["cloth", "clothing", "apparel"]):
                 category = self.refine_clothing_category(d["bbox"], h)
 
             else:
@@ -170,7 +181,7 @@ class YoloV8Detector:
                 "class_name": d["cls_name"],
                 "conf": d["conf"],
                 "category": category,
-                "img_h": h
+                "img_h": h,
             })
 
         return out

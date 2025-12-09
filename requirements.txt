@@ -1,32 +1,18 @@
-# ===== Core Python Scientific Stack =====
-numpy==1.26.4
-pillow==10.2.0
-opencv-python==4.9.0.80
-tqdm==4.66.1
-ftfy==6.1.1
-regex==2023.12.25
+streamlit
+pillow
+numpy
+opencv-python-headless==4.9.0.80
 
-# ===== PyTorch (CPU) =====
-torch==2.2.0
-torchvision==0.17.0
-
-# ===== YOLOv8 =====
 ultralytics==8.3.0
 
-# ===== FAISS =====
+torch==2.1.0+cpu
+torchvision==0.16.0+cpu
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+transformers
+ftfy
+regex
+tqdm
+
 faiss-cpu==1.7.4
-
-# ===== CLIP =====
 git+https://github.com/openai/CLIP.git
-
-# ===== FastAPI web stack =====
-fastapi==0.110.0
-uvicorn[standard]==0.29.0
-pydantic==1.10.14
-python-multipart==0.0.6
-
-# ===== Utilities =====
-gdown==5.1.0
-
-# ===== HuggingFace Transformers (safe version) =====
-transformers==4.36.2
