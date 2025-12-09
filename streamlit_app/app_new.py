@@ -3,12 +3,12 @@ import sys
 import streamlit as st
 from PIL import Image
 
-
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from src.pipeline.snapstyle_pipeline import SnapStylePipeline   # ★ Import your pipeline
+from src.pipeline.snapstyle_pipeline import SnapStylePipeline
+
 
 # -------------------------
 # PAGE CONFIG
@@ -57,20 +57,14 @@ def digitize_closet_tab():
             "Upload clothing image:",
             type=["jpg", "jpeg", "png"]
         )
-        item_name = st.text_input("Item Name (optional)")
         submitted = st.form_submit_button("⬆️ Upload & Digitize")
 
     if submitted and uploaded_file:
         st.info("Running YOLO detection + CLIP Embedding ...")
 
-        # Save temp file
-        temp_path = f"temp_uploads/{uploaded_file.name}"
-        with open(temp_path, "wb") as f:
-            f.write(uploaded_file.read())
-
-        # Run digitization
+        # --- pipeline 本身已经会自动把 UploadedFile 保存到 /tmp ---
         with st.spinner("Analyzing image ..."):
-            digitized_items = pipeline.digitize_image(temp_path)
+            digitized_items = pipeline.digitize_image(uploaded_file)
 
         st.success(f"Digitized {len(digitized_items)} items!")
         st.json(digitized_items)
@@ -88,19 +82,16 @@ def outfit_planner_tab():
         st.warning("You must first digitize some clothing items before generating outfits.")
         return
 
-    # Anchor item selection
     item_ids = list(metadata.keys())
     anchor_id = st.selectbox("Choose an anchor item:", item_ids)
 
     anchor_meta = metadata[anchor_id]
     st.write("Selected Item Category:", anchor_meta["category"])
 
-    # Preview cropped image
     crop_path = anchor_meta.get("crop_path")
     if crop_path and os.path.exists(crop_path):
         st.image(crop_path, caption="Anchor Item", width=250)
 
-    # Text prompt
     prompt = st.text_input("Describe the look you want:", "formal interview look")
 
     if st.button("🚀 Generate Outfits"):
@@ -123,7 +114,7 @@ def outfit_planner_tab():
 # MAIN APP
 # -------------------------
 def main():
-  
+
     load_banner()
 
     tab_home, tab_digitize, tab_outfit = st.tabs(
@@ -142,25 +133,29 @@ def main():
         if st.button("❌ Clear ALL digitized data (reset system)"):
             import shutil
 
+            HF_DATA_ROOT = "/data/snapstyle"
+
             folders = [
-                "data/user_embeddings",
-                "data/user_crops",
-                "faiss",
-                "temp_uploads"
+                f"{HF_DATA_ROOT}/embeddings",
+                f"{HF_DATA_ROOT}/crops",
+                f"{HF_DATA_ROOT}/faiss",
+                "/tmp/snapstyle/uploads"
             ]
 
             for folder in folders:
                 if os.path.exists(folder):
                     shutil.rmtree(folder)
-            
-            # Recreate empty folders
-            os.makedirs("data/user_embeddings", exist_ok=True)
-            os.makedirs("data/user_crops", exist_ok=True)
-            os.makedirs("faiss", exist_ok=True)
 
+            # recreate dirs
+            os.makedirs(f"{HF_DATA_ROOT}/embeddings", exist_ok=True)
+            os.makedirs(f"{HF_DATA_ROOT}/crops", exist_ok=True)
+            os.makedirs(f"{HF_DATA_ROOT}/faiss", exist_ok=True)
+            os.makedirs("/tmp/snapstyle/uploads", exist_ok=True)
+
+            # clear cache
             load_pipeline.clear()
 
-            st.success("All data cleared! Please refresh the page (or run Streamlit again).")
+            st.success("All data cleared! Please refresh the page.")
 
     # -------------------------
     # DIGITIZE TAB
