@@ -1,0 +1,10 @@
+path: data/raw/dataset_yolo
+
+train: images/train
+val: images/val
+
+names:
+  0: top
+  1: bottom
+  2: shoes
+  3: accessory
