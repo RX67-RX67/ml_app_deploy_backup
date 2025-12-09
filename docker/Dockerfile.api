@@ -29,7 +29,8 @@ COPY src/models/pipeline ./src/models/pipeline
 COPY src/vector_store ./src/vector_store
 
 # Copy ML model files
-COPY yolov8n.pt /app/yolov8n.pt
+COPY models/trained/best.pt /app/models/best.pt
+
 
 # Expose FastAPI port
 EXPOSE 8000

@@ -4,13 +4,17 @@ services:
   snapstyle-backend:
     build:
       context: .
-      dockerfile: Dockerfile.api
+      dockerfile: docker/Dockerfile.api
     ports:
       - "8000:8000"
     networks:
       - snapstyle-network
     volumes:
-      - .:/app
+      - ./src:/app/src
+      - ./models:/app/models
+      - ./data:/app/data
+    environment:
+      - PYTHONPATH=/app
 
   snapstyle-frontend:
     build:
@@ -24,6 +28,8 @@ services:
       - snapstyle-backend
     networks:
       - snapstyle-network
+    volumes:
+      - ./streamlit_app:/app/streamlit_app
 
 networks:
   snapstyle-network:

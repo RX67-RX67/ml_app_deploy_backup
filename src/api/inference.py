@@ -4,18 +4,15 @@ import os
 import shutil
 
 from fastapi import UploadFile
-from src.models.pipeline.detect_crop_embed import embed_user_image
+from src.models.pipeline.detect_crop_embed_hybrid import embed_user_image_hybrid
 
 UPLOAD_DIR = "data/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 def process_uploaded_image(file: UploadFile):
-    """
-    Save → Detect → Crop → Embed
-    """
-
-    # Save file
+    
+    # Save uploaded file
     file_id = uuid.uuid4().hex
     extension = file.filename.split(".")[-1]
     saved_path = os.path.join(UPLOAD_DIR, f"{file_id}.{extension}")
@@ -25,8 +22,8 @@ def process_uploaded_image(file: UploadFile):
 
     print(f"Saved uploaded image → {saved_path}")
 
-    # Run pipeline
-    results = embed_user_image(saved_path)
+    # Run YOLO + CLIP hybrid embedding pipeline
+    results = embed_user_image_hybrid(saved_path)
 
     if not results:
         return {
@@ -36,7 +33,7 @@ def process_uploaded_image(file: UploadFile):
             "message": "No clothing items detected."
         }
 
-    # Format response
+    # Format API response
     formatted_items = []
     for item in results:
         formatted_items.append({
@@ -50,5 +47,5 @@ def process_uploaded_image(file: UploadFile):
         "timestamp": datetime.now(),
         "num_items": len(formatted_items),
         "items": formatted_items,
-        "message": "YOLO detection + embedding completed."
+        "message": "YOLO + CLIP hybrid embedding completed."
     }
