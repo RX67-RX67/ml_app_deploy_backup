@@ -1,18 +1,29 @@
-streamlit
+# Streamlit UI
+streamlit==1.36.0
+
+# Image + array
 pillow
 numpy
 opencv-python-headless==4.9.0.80
 
+# YOLOv8
 ultralytics==8.3.0
 
-torch==2.1.0+cpu
-torchvision==0.16.0+cpu
---extra-index-url https://download.pytorch.org/whl/cpu
+# PyTorch - use stable CPU versions
+torch==2.1.2
+torchvision==0.16.1
 
-transformers
+# Transformers compatible with torch 2.1
+transformers==4.38.2
+accelerate==0.27.2
+
+# CLIP dependencies
 ftfy
 regex
 tqdm
 
+# FAISS
 faiss-cpu==1.7.4
+
+# OpenAI CLIP implementation
 git+https://github.com/openai/CLIP.git
