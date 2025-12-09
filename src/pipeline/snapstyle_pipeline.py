@@ -30,7 +30,7 @@ class SnapStylePipeline:
         data_root: str = "/data/snapstyle",
 
         # YOLO 模型
-        yolo_model_path: str = "/data/best.pt",
+        yolo_model_path: str = "models/trained/best.pt",
     ):
 
         self.device = device
@@ -60,7 +60,7 @@ class SnapStylePipeline:
         if not os.path.exists(yolo_model_path):
             raise FileNotFoundError(
                 f"YOLO model not found at {yolo_model_path}\n"
-                "➡️ 请到 HuggingFace Space 的 Files 页上传 best.pt 到 /data/"
+                "➡️ 请到 HuggingFace Space 的 Files 页上传 best.pt 到 models/trained/"
             )
 
         self.yolo_model_path = yolo_model_path
