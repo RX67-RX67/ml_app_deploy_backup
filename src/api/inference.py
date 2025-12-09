@@ -4,7 +4,10 @@ import os
 import shutil
 
 from fastapi import UploadFile
-from src.models.pipeline.detect_crop_embed_hybrid import embed_user_image_hybrid
+from src.models.pipeline.detect_crop_embed_hybrid import (
+    embed_user_image_hybrid,
+    save_metadata
+)
 
 UPLOAD_DIR = "data/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -24,6 +27,10 @@ def process_uploaded_image(file: UploadFile):
 
     # Run YOLO + CLIP hybrid embedding pipeline
     results = embed_user_image_hybrid(saved_path)
+
+    # ⭐ Save metadata (important!)
+    if results:
+        save_metadata(results)
 
     if not results:
         return {
